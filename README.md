@@ -1,6 +1,6 @@
 # Claude Limite para Apple Silicon
 
-Indicador local de uso do Claude para a barra de menus do macOS. Ele mostra o limite semanal ou a janela de 5 horas da sua assinatura do Claude (Pro/Max), conforme a opção escolhida no menu, e acompanha automaticamente a execução do app Claude ou do Claude Code.
+Indicador local de uso do Claude para a barra de menus do macOS. Ele mostra o percentual já usado da sessão atual e da semana da sua assinatura do Claude (Pro/Max), do mesmo jeito que o app Claude mostra em Configurações > Uso, e acompanha automaticamente a execução do app Claude ou do Claude Code.
 
 Este projeto é um recurso comunitário/local e não é um produto oficial da Anthropic. Ele nasceu como uma adaptação do [indicador de limite do Codex](https://github.com/abel7angelo/codex-weekly-limit).
 
@@ -37,15 +37,25 @@ O indicador real só é executado enquanto o app Claude para desktop ou uma sess
 
 O menu usa inglês por padrão. Quando o primeiro idioma preferido do macOS for `pt-BR`, o menu será exibido em português do Brasil. Outros idiomas usam inglês como fallback. A mudança de idioma passa a valer ao reiniciar o Claude e o indicador.
 
-Contas sem janela de 5 horas continuam vendo o cartão informativo, marcado como não incluído no plano. Os controles de exibição e alternância dessa janela ficam ocultos, e a barra volta ao limite semanal sem apagar as preferências salvas. Se uma atualização falhar, o indicador preserva o último estado conhecido e mostra o aviso de dado desatualizado.
+Contas sem limite de sessão continuam vendo o cartão informativo, marcado como não incluído no plano. Os controles de exibição e alternância da sessão ficam ocultos, e a barra volta ao uso da semana sem apagar as preferências salvas. Se uma atualização falhar, o indicador preserva o último estado conhecido e mostra o aviso de dado desatualizado.
 
 ## Exibição
 
-Por padrão, a barra mostra o limite semanal. No menu do indicador, use:
+O menu mostra os dois limites como no app Claude, por exemplo:
 
-    Exibir limite de 5 horas na barra
+    Sessão atual
+    19% usado
+    Redefine às 15:20
 
-Quando ativada, a barra mostra somente o limite de 5 horas. O menu aberto continua exibindo os dois limites.
+    Esta semana
+    54% usado
+    Reinicia domingo, 20:00
+
+Por padrão, a barra mostra o uso da semana. No menu do indicador, use:
+
+    Exibir sessão atual na barra
+
+Quando ativada, a barra mostra somente o uso da sessão atual. O menu aberto continua exibindo os dois limites.
 
 Também estão disponíveis:
 
@@ -53,11 +63,11 @@ As três opções aparecem como switches personalizados com visual alinhado ao m
 
     Alternar a cada 30 segundos
 
-Exibe o limite semanal e o de 5 horas alternadamente. Quando a alternância está ativa, `Começar pela janela de 5 horas` define qual aparece primeiro; quando está desligada, o mesmo switch seleciona o único limite exibido.
+Exibe o uso da semana e o da sessão atual alternadamente. Quando a alternância está ativa, `Começar pela sessão atual` define qual aparece primeiro; quando está desligada, o mesmo switch seleciona o único limite exibido.
 
     Modo compacto na barra
 
-Reduz o texto da barra para `S 42%` em português ou `W 42%` em inglês no limite semanal, e para `5h 80%` na janela de 5 horas. O texto completo continua disponível na dica e no menu.
+Reduz o texto da barra para `S 54%` em português ou `W 54%` em inglês para a semana, e para `5h 19%` na sessão atual. Os percentuais são sempre de uso. O texto completo continua disponível na dica e no menu.
 
     Ocultar até fechar o Claude
 

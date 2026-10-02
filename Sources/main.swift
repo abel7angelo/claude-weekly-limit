@@ -4,8 +4,9 @@ struct Window {
     let used: Double
     let reset: Date?
 
-    var remaining: Int {
-        Int((100 - min(100, max(0, used))).rounded())
+    // Percentual já usado, como o app Claude mostra em Configurações > Uso.
+    var usage: Int {
+        Int(min(100, max(0, used)).rounded())
     }
 
     init?(_ value: Any?) {
@@ -47,16 +48,16 @@ struct MenuCopy {
         MenuCopy(language: .current)
     }
 
-    var weeklyLimit: String { language == .portugueseBrazil ? "Limite semanal" : "Weekly limit" }
-    var fiveHourWindow: String { language == .portugueseBrazil ? "Janela de 5 horas" : "5-hour window" }
-    var remaining: String { language == .portugueseBrazil ? "restante" : "remaining" }
+    var weeklyLimit: String { language == .portugueseBrazil ? "Esta semana" : "This week" }
+    var fiveHourWindow: String { language == .portugueseBrazil ? "Sessão atual" : "Current session" }
+    var used: String { language == .portugueseBrazil ? "usado" : "used" }
     var unavailable: String { language == .portugueseBrazil ? "indisponível" : "unavailable" }
     var unavailableLimit: String { language == .portugueseBrazil ? "Limite indisponível" : "Limit unavailable" }
     var notIncluded: String { language == .portugueseBrazil ? "não incluído" : "not included" }
     var notIncludedInPlan: String { language == .portugueseBrazil ? "Não incluído neste plano" : "Not included in this plan" }
-    var showFiveHour: String { language == .portugueseBrazil ? "Exibir limite de 5 horas na barra" : "Show 5-hour limit in menu bar" }
+    var showFiveHour: String { language == .portugueseBrazil ? "Exibir sessão atual na barra" : "Show current session in menu bar" }
     var alternate: String { language == .portugueseBrazil ? "Alternar a cada 30 segundos" : "Alternate every 30 seconds" }
-    var startWithFiveHour: String { language == .portugueseBrazil ? "Começar pela janela de 5 horas" : "Start with the 5-hour window" }
+    var startWithFiveHour: String { language == .portugueseBrazil ? "Começar pela sessão atual" : "Start with the current session" }
     var compact: String { language == .portugueseBrazil ? "Modo compacto na barra" : "Compact mode in menu bar" }
     var automatic: String { language == .portugueseBrazil ? "Atualização automática a cada 5 min" : "Automatic update every 5 min" }
     var refresh: String { language == .portugueseBrazil ? "Atualizar agora" : "Refresh now" }
@@ -73,10 +74,30 @@ struct MenuCopy {
     var hourSuffix: String { "h" }
     var minuteSuffix: String { "min" }
 
-    func renewal(date: String, countdown: String) -> String {
-        language == .portugueseBrazil
-            ? "Renova em \(date) · faltam \(countdown)"
-            : "Renews on \(date) · \(countdown) left"
+    private func formatted(_ date: Date, _ format: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: localeIdentifier)
+        formatter.dateFormat = format
+        return formatter.string(from: date)
+    }
+
+    // "Redefine às 15:20", como no app Claude.
+    func sessionReset(_ date: Date, calendar: Calendar = .current) -> String {
+        let time = formatted(date, "HH:mm")
+        if calendar.isDateInToday(date) {
+            return language == .portugueseBrazil ? "Redefine às \(time)" : "Resets at \(time)"
+        }
+        if calendar.isDateInTomorrow(date) {
+            return language == .portugueseBrazil ? "Redefine amanhã às \(time)" : "Resets tomorrow at \(time)"
+        }
+        return weeklyReset(date)
+    }
+
+    // "Reinicia domingo, 20:00", como no app Claude.
+    func weeklyReset(_ date: Date) -> String {
+        let day = formatted(date, "EEEE")
+        let time = formatted(date, "HH:mm")
+        return language == .portugueseBrazil ? "Reinicia \(day), \(time)" : "Resets \(day), \(time)"
     }
 
     func updated(date: String) -> String {
@@ -90,12 +111,12 @@ struct MenuCopy {
     func statusTooltip(weekly: String, short: String, shortIncluded: Bool) -> String {
         guard shortIncluded else {
             return language == .portugueseBrazil
-                ? "Claude: semanal \(weekly) · janela de 5 horas não incluída neste plano"
-                : "Claude: weekly \(weekly) · 5-hour window not included in this plan"
+                ? "Claude: esta semana \(weekly) usado · sessão não incluída neste plano"
+                : "Claude: this week \(weekly) used · session not included in this plan"
         }
         return language == .portugueseBrazil
-            ? "Claude: semanal \(weekly) · janela de 5 horas \(short)"
-            : "Claude: weekly \(weekly) · 5-hour window \(short)"
+            ? "Claude: sessão atual \(short) usado · esta semana \(weekly) usado"
+            : "Claude: current session \(short) used · this week \(weekly) used"
     }
 
     var credentialsNotFound: String { language == .portugueseBrazil ? "Login do Claude Code não encontrado neste Mac" : "Claude Code login was not found on this Mac" }
@@ -328,8 +349,12 @@ func validatedLimits(_ result: [String: Any]) -> ValidatedLimits? {
     return ValidatedLimits(result: result, shortAvailable: true)
 }
 
+func usageColor(_ usage: Int) -> NSColor {
+    usage >= 90 ? NSColor.systemRed : usage >= 75 ? NSColor.systemOrange : NSColor.systemGreen
+}
+
 private final class ProgressBarView: NSView {
-    var remaining = 0 {
+    var usage = 0 {
         didSet { needsDisplay = true }
     }
 
@@ -344,13 +369,13 @@ private final class ProgressBarView: NSView {
         NSColor.separatorColor.withAlphaComponent(0.35).setFill()
         NSBezierPath(roundedRect: track, xRadius: track.height / 2, yRadius: track.height / 2).fill()
 
-        let fraction = CGFloat(min(100, max(0, remaining))) / 100
+        let fraction = CGFloat(min(100, max(0, usage))) / 100
         let fill = NSRect(x: track.minX, y: track.minY, width: track.width * fraction, height: track.height)
         guard fill.width > 0 else { return }
 
         let color = stale
             ? NSColor.secondaryLabelColor
-            : remaining <= 10 ? NSColor.systemRed : remaining <= 25 ? NSColor.systemOrange : NSColor.systemGreen
+            : usageColor(usage)
         color.setFill()
         NSBezierPath(roundedRect: fill, xRadius: track.height / 2, yRadius: track.height / 2).fill()
     }
@@ -368,7 +393,7 @@ private final class LimitCardView: NSView {
         self.copy = copy
         headingLabel = NSTextField(labelWithString: title)
         percentLabel = NSTextField(labelWithString: "—")
-        remainingLabel = NSTextField(labelWithString: copy.remaining)
+        remainingLabel = NSTextField(labelWithString: copy.used)
         resetLabel = NSTextField(labelWithString: "")
         super.init(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 78))
 
@@ -421,17 +446,17 @@ private final class LimitCardView: NSView {
             percentLabel.stringValue = "—"
             remainingLabel.stringValue = unavailableForPlan ? copy.notIncluded : copy.unavailable
             resetLabel.stringValue = unavailableForPlan ? copy.notIncludedInPlan : copy.unavailableLimit
-            progressBar.remaining = 0
+            progressBar.usage = 0
             progressBar.isHidden = unavailableForPlan
             setAccessibilityLabel("\(title): \(unavailableForPlan ? copy.notIncludedInPlan : copy.unavailableLimit)")
             return
         }
 
-        percentLabel.stringValue = "\(window.remaining)%"
-        remainingLabel.stringValue = copy.remaining
+        percentLabel.stringValue = "\(window.usage)%"
+        remainingLabel.stringValue = copy.used
         progressBar.isHidden = false
-        progressBar.remaining = window.remaining
-        setAccessibilityLabel("\(title): \(window.remaining)% \(copy.remaining)")
+        progressBar.usage = window.usage
+        setAccessibilityLabel("\(title): \(window.usage)% \(copy.used)")
     }
 
     func updateReset(_ text: String) {
@@ -721,28 +746,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         RunLoop.main.add(timer, forMode: .common)
     }
 
-    private func countdown(to date: Date) -> String {
-        let seconds = max(0, Int(date.timeIntervalSinceNow.rounded()))
-        if seconds == 0 { return menuCopy.now }
-
-        let minutes = seconds / 60
-        let days = minutes / 1440
-        let hours = (minutes % 1440) / 60
-        let remainingMinutes = minutes % 60
-
-        if days > 0 {
-            return hours > 0
-                ? "\(days)\(menuCopy.daySuffix) \(hours)\(menuCopy.hourSuffix)"
-                : "\(days)\(menuCopy.daySuffix)"
-        }
-        if hours > 0 {
-            return remainingMinutes > 0
-                ? "\(hours)\(menuCopy.hourSuffix) \(remainingMinutes)\(menuCopy.minuteSuffix)"
-                : "\(hours)\(menuCopy.hourSuffix)"
-        }
-        return "\(max(1, remainingMinutes))\(menuCopy.minuteSuffix)"
-    }
-
     private func configureMenu() {
         menu.autoenablesItems = false
 
@@ -794,9 +797,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.image?.size = NSSize(width: 13, height: 13)
             item.image?.isTemplate = true
         }
-        menu.addItem(weeklyCardItem)
-        menu.addItem(.separator())
         menu.addItem(shortCardItem)
+        menu.addItem(.separator())
+        menu.addItem(weeklyCardItem)
         menu.addItem(.separator())
         menu.addItem(showShortItem)
         menu.addItem(rotateItem)
@@ -839,8 +842,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let weeklyStale = failed || weekly?.reset.map { $0 <= Date() } == true
         let shortStale = failed || short?.reset.map { $0 <= Date() } == true
         let displayedStale = displayingShort ? shortStale : weeklyStale
-        let weeklyLabel = weekly.map { "\($0.remaining)%" } ?? "—"
-        let shortLabel = short.map { "\($0.remaining)%" } ?? "—"
+        let weeklyLabel = weekly.map { "\($0.usage)%" } ?? "—"
+        let shortLabel = short.map { "\($0.usage)%" } ?? "—"
         let selectedLabel = displayingShort ? "5h \(shortLabel)" : weeklyLabel
         let statusLabel = compactStatus
             ? (displayingShort ? "5h \(shortLabel)" : "\(menuCopy.weeklyAbbreviation) \(weeklyLabel)")
@@ -861,10 +864,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     withCenter: NSPoint(x: 9, y: 9),
                     radius: 7,
                     startAngle: 90,
-                    endAngle: 90 - CGFloat(displayed.remaining) * 3.6,
+                    endAngle: 90 - CGFloat(displayed.usage) * 3.6,
                     clockwise: true
                 )
-                (displayedStale ? NSColor.secondaryLabelColor : displayed.remaining <= 10 ? NSColor.systemRed : displayed.remaining <= 25 ? NSColor.systemOrange : NSColor.systemGreen).setStroke()
+                (displayedStale ? NSColor.secondaryLabelColor : usageColor(displayed.usage)).setStroke()
                 arc.stroke()
             }
             return true
@@ -877,9 +880,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         weeklyCard.update(title: menuCopy.weeklyLimit, window: weekly, stale: weeklyStale)
-        weeklyCard.updateReset(weekly?.reset.map { menuCopy.renewal(date: formatter.string(from: $0), countdown: countdown(to: $0)) } ?? menuCopy.unavailableLimit)
+        weeklyCard.updateReset(weekly?.reset.map { menuCopy.weeklyReset($0) } ?? menuCopy.unavailableLimit)
         shortCard.update(title: menuCopy.fiveHourWindow, window: short, stale: shortStale, unavailableForPlan: shortUnavailableForPlan)
-        shortCard.updateReset(short?.reset.map { menuCopy.renewal(date: formatter.string(from: $0), countdown: countdown(to: $0)) } ?? (shortUnavailableForPlan ? menuCopy.notIncludedInPlan : menuCopy.unavailableLimit))
+        shortCard.updateReset(short?.reset.map { menuCopy.sessionReset($0) } ?? (shortUnavailableForPlan ? menuCopy.notIncludedInPlan : menuCopy.unavailableLimit))
 
         showShortRow.updateTitle(rotateStatus ? menuCopy.startWithFiveHour : menuCopy.showFiveHour)
         showShortRow.toggle.state = showShortInStatus ? .on : .off
@@ -979,11 +982,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 if CommandLine.arguments.contains("--check") {
-    precondition(Window(["usedPercent": 57.0])?.remaining == 43)
-    precondition(Window(["usedPercent": 110.0])?.remaining == 0)
+    precondition(Window(["usedPercent": 57.0])?.usage == 57)
+    precondition(Window(["usedPercent": 110.0])?.usage == 100)
     precondition(Window([:]) == nil)
-    precondition(MenuCopy(language: .english).weeklyLimit == "Weekly limit")
-    precondition(MenuCopy(language: .portugueseBrazil).weeklyLimit == "Limite semanal")
+    precondition(MenuCopy(language: .english).weeklyLimit == "This week")
+    precondition(MenuCopy(language: .portugueseBrazil).weeklyLimit == "Esta semana")
+    precondition(MenuCopy(language: .portugueseBrazil).weeklyReset(Date()).hasPrefix("Reinicia "))
+    precondition(MenuCopy(language: .portugueseBrazil).sessionReset(Date()).hasPrefix("Redefine às "))
+    precondition(MenuCopy(language: .english).sessionReset(Date().addingTimeInterval(86_400)).hasPrefix("Resets tomorrow at "))
     precondition(MenuCopy(language: .english).weeklyAbbreviation == "W")
     precondition(MenuCopy(language: .portugueseBrazil).weeklyAbbreviation == "S")
 
@@ -991,7 +997,7 @@ if CommandLine.arguments.contains("--check") {
         "weekly": ["windowDurationMins": 10080.0, "usedPercent": 10.0],
         "short": ["windowDurationMins": 300.0, "usedPercent": 20.0]
     ]
-    precondition(limitWindow(in: checkBucket, durationMinutes: 300)?.remaining == 80)
+    precondition(limitWindow(in: checkBucket, durationMinutes: 300)?.usage == 20)
     precondition(limitWindow(in: checkBucket, durationMinutes: 1440) == nil)
 
     let noShortBucket: [String: Any] = [
@@ -1016,8 +1022,8 @@ if CommandLine.arguments.contains("--check") {
         "seven_day_opus": ["utilization": 0.0, "resets_at": NSNull()]
     ]
     let sampleBucket = limitBucket(normalizedLimits(sampleResponse))
-    precondition(limitWindow(in: sampleBucket, durationMinutes: 10080)?.remaining == 65)
-    precondition(limitWindow(in: sampleBucket, durationMinutes: 300)?.remaining == 94)
+    precondition(limitWindow(in: sampleBucket, durationMinutes: 10080)?.usage == 35)
+    precondition(limitWindow(in: sampleBucket, durationMinutes: 300)?.usage == 6)
     precondition(limitWindow(in: sampleBucket, durationMinutes: 300)?.reset.map { abs($0.timeIntervalSince1970 - 1762232399) < 1 } == true)
     precondition(validatedLimits(normalizedLimits(["seven_day": ["utilization": 1.0]]))?.shortAvailable == false)
     precondition(validatedLimits(normalizedLimits([:])) == nil)
@@ -1046,9 +1052,9 @@ if CommandLine.arguments.contains("--check") {
         fatalError("\(menuCopy.weeklyLimit) \(menuCopy.unavailable)")
     }
     let short = limitWindow(in: bucket, durationMinutes: 300)
-    print("\(menuCopy.weeklyLimit): \(weekly.remaining)% \(menuCopy.remaining); reset: \(weekly.reset?.description ?? menuCopy.unavailable)")
+    print("\(menuCopy.weeklyLimit): \(weekly.usage)% \(menuCopy.used) · \(weekly.reset.map { menuCopy.weeklyReset($0) } ?? menuCopy.unavailable)")
     if let short {
-        print("\(menuCopy.fiveHourWindow): \(short.remaining)% \(menuCopy.remaining)")
+        print("\(menuCopy.fiveHourWindow): \(short.usage)% \(menuCopy.used) · \(short.reset.map { menuCopy.sessionReset($0) } ?? menuCopy.unavailable)")
     } else {
         print("\(menuCopy.fiveHourWindow): \(menuCopy.unavailable)")
     }
