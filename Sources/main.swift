@@ -182,6 +182,14 @@ func securityOutput(_ arguments: [String]) -> Data? {
     } catch {
         return nil
     }
+
+    // Um pedido de acesso ao Keychain sem resposta não pode travar as atualizações.
+    let timeout = DispatchWorkItem {
+        if process.isRunning { process.terminate() }
+    }
+    DispatchQueue.global().asyncAfter(deadline: .now() + 20, execute: timeout)
+    defer { timeout.cancel() }
+
     let data = output.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     guard process.terminationStatus == 0, !data.isEmpty else { return nil }
@@ -827,9 +835,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         draw()
         refresh()
 
-        refreshTimer = Timer.scheduledTimer(timeInterval: 300, target: self, selector: #selector(refresh), userInfo: nil, repeats: true)
+        let timer = Timer(timeInterval: 300, target: self, selector: #selector(refresh), userInfo: nil, repeats: true)
+        refreshTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
         restartDisplayTimer()
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(refresh), name: NSWorkspace.didWakeNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(refreshAfterWake), name: NSWorkspace.didWakeNotification, object: nil)
     }
 
     private func draw() {
@@ -931,6 +941,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         draw()
     }
 
+    // Logo após acordar o Mac a rede ainda pode estar desligada; tenta de novo em seguida.
+    @objc private func refreshAfterWake() {
+        refresh()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { self.refresh() }
+    }
+
     @objc private func refresh() {
         guard !loading else { return }
         loading = true
@@ -959,6 +975,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.result = fetched.result
                     self.updated = Date()
                     self.shortLimitAvailable = fetched.shortAvailable
+                } else {
+                    // Falhas passageiras de rede não devem esperar o ciclo de 5 minutos.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 60) { self.refresh() }
                 }
                 self.draw()
             }
