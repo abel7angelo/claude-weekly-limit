@@ -102,22 +102,20 @@ struct MenuCopy {
         return "\(max(1, remainingMinutes))\(minuteSuffix)"
     }
 
-    // Quando acontece a renovação: "hoje às 15:20", "amanhã às 01:00" ou "domingo, 20:00".
-    func resetMoment(_ date: Date, calendar: Calendar = .current) -> String {
+    // Texto do app Claude com a contagem no final:
+    // "Reinicia dom., 01:30 · em 1h 40min" na sessão e "Reinicia domingo, 20:00 · em 3d 4h" na semana.
+    func reset(_ date: Date, session: Bool, now: Date = Date(), calendar: Calendar = .current) -> String {
         let time = formatted(date, "HH:mm")
-        if calendar.isDateInToday(date) {
-            return language == .portugueseBrazil ? "hoje às \(time)" : "today at \(time)"
+        let moment: String
+        if session && calendar.isDate(date, inSameDayAs: now) {
+            moment = language == .portugueseBrazil ? "às \(time)" : "at \(time)"
+        } else {
+            moment = "\(formatted(date, session ? "EEE" : "EEEE")), \(time)"
         }
-        if calendar.isDateInTomorrow(date) {
-            return language == .portugueseBrazil ? "amanhã às \(time)" : "tomorrow at \(time)"
-        }
-        return "\(formatted(date, "EEEE")), \(time)"
-    }
-
-    // "Reinicia em 3h 20min · hoje às 15:20", usado nas duas janelas.
-    func reset(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
-        let prefix = language == .portugueseBrazil ? "Reinicia em" : "Resets in"
-        return "\(prefix) \(countdown(to: date, from: now)) · \(resetMoment(date, calendar: calendar))"
+        let countdownText = countdown(to: date, from: now)
+        return language == .portugueseBrazil
+            ? "Reinicia \(moment) · em \(countdownText)"
+            : "Resets \(moment) · in \(countdownText)"
     }
 
     func updated(date: String) -> String {
@@ -910,9 +908,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         weeklyCard.update(title: menuCopy.weeklyLimit, window: weekly, stale: weeklyStale)
-        weeklyCard.updateReset(weekly?.reset.map { menuCopy.reset($0) } ?? menuCopy.unavailableLimit)
+        weeklyCard.updateReset(weekly?.reset.map { menuCopy.reset($0, session: false) } ?? menuCopy.unavailableLimit)
         shortCard.update(title: menuCopy.fiveHourWindow, window: short, stale: shortStale, unavailableForPlan: shortUnavailableForPlan)
-        shortCard.updateReset(short?.reset.map { menuCopy.reset($0) } ?? (shortUnavailableForPlan ? menuCopy.notIncludedInPlan : menuCopy.unavailableLimit))
+        shortCard.updateReset(short?.reset.map { menuCopy.reset($0, session: true) } ?? (shortUnavailableForPlan ? menuCopy.notIncludedInPlan : menuCopy.unavailableLimit))
 
         showShortRow.updateTitle(rotateStatus ? menuCopy.startWithFiveHour : menuCopy.showFiveHour)
         showShortRow.toggle.state = showShortInStatus ? .on : .off
@@ -1032,8 +1030,9 @@ if CommandLine.arguments.contains("--check") {
     precondition(pt.countdown(to: checkNow.addingTimeInterval(2 * 86_400 + 4 * 3600), from: checkNow) == "2d 4h")
     precondition(pt.countdown(to: checkNow.addingTimeInterval(30), from: checkNow) == "1min")
     precondition(pt.countdown(to: checkNow, from: checkNow) == "agora")
-    precondition(pt.reset(checkNow.addingTimeInterval(3 * 86_400), now: checkNow).hasPrefix("Reinicia em 3d · "))
-    precondition(MenuCopy(language: .english).reset(checkNow.addingTimeInterval(3 * 86_400), now: checkNow).hasPrefix("Resets in 3d · "))
+    precondition(pt.reset(checkNow.addingTimeInterval(3 * 86_400), session: false, now: checkNow).hasSuffix(" · em 3d"))
+    precondition(pt.reset(checkNow.addingTimeInterval(3 * 86_400), session: false, now: checkNow).hasPrefix("Reinicia "))
+    precondition(MenuCopy(language: .english).reset(checkNow.addingTimeInterval(3 * 86_400), session: true, now: checkNow).hasSuffix(" · in 3d"))
     precondition(MenuCopy(language: .english).weeklyAbbreviation == "W")
     precondition(MenuCopy(language: .portugueseBrazil).weeklyAbbreviation == "S")
 
@@ -1096,9 +1095,9 @@ if CommandLine.arguments.contains("--check") {
         fatalError("\(menuCopy.weeklyLimit) \(menuCopy.unavailable)")
     }
     let short = limitWindow(in: bucket, durationMinutes: 300)
-    print("\(menuCopy.weeklyLimit): \(weekly.usage)% \(menuCopy.used) · \(weekly.reset.map { menuCopy.reset($0) } ?? menuCopy.unavailable)")
+    print("\(menuCopy.weeklyLimit): \(weekly.usage)% \(menuCopy.used) · \(weekly.reset.map { menuCopy.reset($0, session: false) } ?? menuCopy.unavailable)")
     if let short {
-        print("\(menuCopy.fiveHourWindow): \(short.usage)% \(menuCopy.used) · \(short.reset.map { menuCopy.reset($0) } ?? menuCopy.unavailable)")
+        print("\(menuCopy.fiveHourWindow): \(short.usage)% \(menuCopy.used) · \(short.reset.map { menuCopy.reset($0, session: true) } ?? menuCopy.unavailable)")
     } else {
         print("\(menuCopy.fiveHourWindow): \(menuCopy.unavailable)")
     }

@@ -45,11 +45,11 @@ O menu mostra os dois limites como no app Claude, por exemplo:
 
     Sessão atual
     19% usado
-    Reinicia em 2h 10min · hoje às 15:20
+    Reinicia dom., 01:30 · em 1h 40min
 
     Esta semana
     54% usado
-    Reinicia em 3d 4h · domingo, 20:00
+    Reinicia domingo, 20:00 · em 3d 4h
 
 Por padrão, a barra mostra o uso da semana. No menu do indicador, use:
 
