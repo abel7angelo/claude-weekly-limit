@@ -81,23 +81,43 @@ struct MenuCopy {
         return formatter.string(from: date)
     }
 
-    // "Redefine às 15:20", como no app Claude.
-    func sessionReset(_ date: Date, calendar: Calendar = .current) -> String {
-        let time = formatted(date, "HH:mm")
-        if calendar.isDateInToday(date) {
-            return language == .portugueseBrazil ? "Redefine às \(time)" : "Resets at \(time)"
+    // Tempo até a renovação, no mesmo formato do indicador do Codex: "2d 4h", "3h 20min", "15min".
+    func countdown(to date: Date, from now: Date = Date()) -> String {
+        let seconds = max(0, Int(date.timeIntervalSince(now).rounded()))
+        if seconds == 0 { return self.now }
+
+        let minutes = seconds / 60
+        let days = minutes / 1440
+        let hours = (minutes % 1440) / 60
+        let remainingMinutes = minutes % 60
+
+        if days > 0 {
+            return hours > 0 ? "\(days)\(daySuffix) \(hours)\(hourSuffix)" : "\(days)\(daySuffix)"
         }
-        if calendar.isDateInTomorrow(date) {
-            return language == .portugueseBrazil ? "Redefine amanhã às \(time)" : "Resets tomorrow at \(time)"
+        if hours > 0 {
+            return remainingMinutes > 0
+                ? "\(hours)\(hourSuffix) \(remainingMinutes)\(minuteSuffix)"
+                : "\(hours)\(hourSuffix)"
         }
-        return weeklyReset(date)
+        return "\(max(1, remainingMinutes))\(minuteSuffix)"
     }
 
-    // "Reinicia domingo, 20:00", como no app Claude.
-    func weeklyReset(_ date: Date) -> String {
-        let day = formatted(date, "EEEE")
+    // Quando acontece a renovação: "hoje às 15:20", "amanhã às 01:00" ou "domingo, 20:00".
+    func resetMoment(_ date: Date, calendar: Calendar = .current) -> String {
         let time = formatted(date, "HH:mm")
-        return language == .portugueseBrazil ? "Reinicia \(day), \(time)" : "Resets \(day), \(time)"
+        if calendar.isDateInToday(date) {
+            return language == .portugueseBrazil ? "hoje às \(time)" : "today at \(time)"
+        }
+        if calendar.isDateInTomorrow(date) {
+            return language == .portugueseBrazil ? "amanhã às \(time)" : "tomorrow at \(time)"
+        }
+        return "\(formatted(date, "EEEE")), \(time)"
+    }
+
+    // "Reinicia em 3h 20min · hoje às 15:20", usado nas duas janelas.
+    func reset(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let prefix = language == .portugueseBrazil ? "Reinicia em" : "Resets in"
+        return "\(prefix) \(countdown(to: date, from: now)) · \(resetMoment(date, calendar: calendar))"
     }
 
     func updated(date: String) -> String {
@@ -890,9 +910,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         weeklyCard.update(title: menuCopy.weeklyLimit, window: weekly, stale: weeklyStale)
-        weeklyCard.updateReset(weekly?.reset.map { menuCopy.weeklyReset($0) } ?? menuCopy.unavailableLimit)
+        weeklyCard.updateReset(weekly?.reset.map { menuCopy.reset($0) } ?? menuCopy.unavailableLimit)
         shortCard.update(title: menuCopy.fiveHourWindow, window: short, stale: shortStale, unavailableForPlan: shortUnavailableForPlan)
-        shortCard.updateReset(short?.reset.map { menuCopy.sessionReset($0) } ?? (shortUnavailableForPlan ? menuCopy.notIncludedInPlan : menuCopy.unavailableLimit))
+        shortCard.updateReset(short?.reset.map { menuCopy.reset($0) } ?? (shortUnavailableForPlan ? menuCopy.notIncludedInPlan : menuCopy.unavailableLimit))
 
         showShortRow.updateTitle(rotateStatus ? menuCopy.startWithFiveHour : menuCopy.showFiveHour)
         showShortRow.toggle.state = showShortInStatus ? .on : .off
@@ -1006,9 +1026,14 @@ if CommandLine.arguments.contains("--check") {
     precondition(Window([:]) == nil)
     precondition(MenuCopy(language: .english).weeklyLimit == "This week")
     precondition(MenuCopy(language: .portugueseBrazil).weeklyLimit == "Esta semana")
-    precondition(MenuCopy(language: .portugueseBrazil).weeklyReset(Date()).hasPrefix("Reinicia "))
-    precondition(MenuCopy(language: .portugueseBrazil).sessionReset(Date()).hasPrefix("Redefine às "))
-    precondition(MenuCopy(language: .english).sessionReset(Date().addingTimeInterval(86_400)).hasPrefix("Resets tomorrow at "))
+    let checkNow = Date(timeIntervalSince1970: 1_800_000_000)
+    let pt = MenuCopy(language: .portugueseBrazil)
+    precondition(pt.countdown(to: checkNow.addingTimeInterval(3 * 3600 + 20 * 60), from: checkNow) == "3h 20min")
+    precondition(pt.countdown(to: checkNow.addingTimeInterval(2 * 86_400 + 4 * 3600), from: checkNow) == "2d 4h")
+    precondition(pt.countdown(to: checkNow.addingTimeInterval(30), from: checkNow) == "1min")
+    precondition(pt.countdown(to: checkNow, from: checkNow) == "agora")
+    precondition(pt.reset(checkNow.addingTimeInterval(3 * 86_400), now: checkNow).hasPrefix("Reinicia em 3d · "))
+    precondition(MenuCopy(language: .english).reset(checkNow.addingTimeInterval(3 * 86_400), now: checkNow).hasPrefix("Resets in 3d · "))
     precondition(MenuCopy(language: .english).weeklyAbbreviation == "W")
     precondition(MenuCopy(language: .portugueseBrazil).weeklyAbbreviation == "S")
 
@@ -1071,9 +1096,9 @@ if CommandLine.arguments.contains("--check") {
         fatalError("\(menuCopy.weeklyLimit) \(menuCopy.unavailable)")
     }
     let short = limitWindow(in: bucket, durationMinutes: 300)
-    print("\(menuCopy.weeklyLimit): \(weekly.usage)% \(menuCopy.used) · \(weekly.reset.map { menuCopy.weeklyReset($0) } ?? menuCopy.unavailable)")
+    print("\(menuCopy.weeklyLimit): \(weekly.usage)% \(menuCopy.used) · \(weekly.reset.map { menuCopy.reset($0) } ?? menuCopy.unavailable)")
     if let short {
-        print("\(menuCopy.fiveHourWindow): \(short.usage)% \(menuCopy.used) · \(short.reset.map { menuCopy.sessionReset($0) } ?? menuCopy.unavailable)")
+        print("\(menuCopy.fiveHourWindow): \(short.usage)% \(menuCopy.used) · \(short.reset.map { menuCopy.reset($0) } ?? menuCopy.unavailable)")
     } else {
         print("\(menuCopy.fiveHourWindow): \(menuCopy.unavailable)")
     }
